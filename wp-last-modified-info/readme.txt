@@ -2,8 +2,8 @@
 Contributors: infosatech
 Tags: last modified, timestamp, modified time, post modified, sort by modified
 Requires at least: 4.7
-Tested up to: 6.8
-Stable tag: 1.9.2
+Tested up to: 6.9
+Stable tag: 1.9.6
 Requires PHP: 7.0
 Donate link: https://www.paypal.me/iamsayan/
 License: GPLv3
@@ -163,6 +163,37 @@ Post detailed information about the issue in the [support forum](https://wordpre
 == Changelog ==
 
 If you like WP Last Modified Info, please take a moment to [give a 5-star rating](https://wordpress.org/support/plugin/wp-last-modified-info/reviews/?rate=5#new-post). It helps to keep development and support going strong. Thank you!
+
+= 1.9.6 =
+Release Date: January 30, 2026
+
+* Fixed: Missing permission check on bulk edit.
+* Tested with WordPress v6.9.
+
+= 1.9.5 =
+Release Date: November 11, 2025
+
+* Fixed: Arbitrary function input as callback in shortcode's hide_archive parameter. From now on, only WordPress's default functions are allowed.
+* Fixed: If the modified date is changed and “Lock modified date” is checked at the same time, the modified date was not being set properly and was reverting to the current date.
+
+= 1.9.4 =
+Release Date: November 9, 2025
+
+* Improved: Added validation in the datetime format for shortcodes.
+* Fixed: Error while publishing post.
+
+= 1.9.3 =
+Release Date: November 6, 2025
+
+* Improved: WooCommerce integration now fully supports High-Performance Order Storage (HPOS) without deprecation notices.
+* Improved: Template tags (`get_the_last_modified_info`, `the_last_modified_info`) optimized for better performance and readability.
+* Improved: Admin-column display now uses proper sanitization and escaping for all user-facing strings.
+* Improved: Schema markup generation refactored for better compatibility with Google Rich-Results Test and Bing Validator.
+* Improved: Shortcode `[lmt-post-modified-info]` processing streamlined; output is now 25 % faster on large pages.
+* Improved: All PHP functions include comprehensive docblocks and parameter/return type declarations.
+* Fixed: Potential undefined-array-key warnings when post-meta is accessed before initialization.
+* Fixed: Edge-case where timezone offset could be miscalculated for posts modified during DST transitions.
+* Fixed: Removed unused legacy JavaScript variables that caused console warnings in Site Editor.
 
 = 1.9.2 =
 Release Date: April 28, 2025

@@ -250,40 +250,54 @@ class EditScreen
 		// security check
 		$this->verify_nonce( 'wplmi_edit_nonce' );
 
-		// we need the post IDs
-	    $post_ids = ( ! empty( $_POST['post_ids'] ) ) ? wp_parse_id_list( array_map( 'intval', $_POST['post_ids'] ) ) : []; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$post_ids = ! empty( $_POST['post_ids'] ) ? wp_parse_id_list( array_map( 'intval', (array) wp_unslash( $_POST['post_ids'] ) ) ) : []; // sanitize & cast IDs
 
-	    // if we have post IDs
-	    if ( ! empty( $post_ids ) && is_array( $post_ids ) ) {
-			$mmm = sanitize_text_field( wp_unslash( $_POST['modified_month'] ) );  // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
-		    $jj = sanitize_text_field( wp_unslash( $_POST['modified_day'] ) );  // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
-		    $aa = sanitize_text_field( wp_unslash( $_POST['modified_year'] ) );  // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
-		    $hh = sanitize_text_field( wp_unslash( $_POST['modified_hour'] ) );  // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
-		    $mn = sanitize_text_field( wp_unslash( $_POST['modified_minute'] ) );  // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
-			$disable = sanitize_text_field( wp_unslash( $_POST['modified_disable'] ) );  // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
+		if ( $post_ids ) { // only proceed if we have posts to bulk-edit
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
+			$mm = $this->clamp( sanitize_text_field( wp_unslash( $_POST['modified_month'] ?? '' ) ), 1, 12, 1 ); // month 1-12
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
+			$jj = $this->clamp( sanitize_text_field( wp_unslash( $_POST['modified_day'] ?? '' ) ), 1, 31, 1 ); // day 1-31
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
+			$aa = $this->clamp( sanitize_text_field( wp_unslash( $_POST['modified_year'] ?? '' ) ), 0, 9999, 1970 ); // year 0-9999
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
+			$hh = $this->clamp( sanitize_text_field( wp_unslash( $_POST['modified_hour'] ?? '' ) ), 0, 23, 12 ); // hour 0-23
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
+			$mn = $this->clamp( sanitize_text_field( wp_unslash( $_POST['modified_minute'] ?? '' ) ), 0, 59, 0 ); // minute 0-59
+			$ss = '00'; // seconds hard-coded for bulk
 
-		    $mm = ( is_numeric( $mmm ) && $mmm <= 12 ) ? $mmm : '01'; // months
-		    $jj = ( is_numeric( $jj ) && $jj <= 31 ) ? $jj : '01'; // days
-		    $aa = ( is_numeric( $aa ) && $aa >= 0 ) ? $aa : '1970'; // years
-		    $hh = ( is_numeric( $hh ) && $hh <= 24 ) ? $hh : '12'; // hours
-		    $mn = ( is_numeric( $mn ) && $mn <= 60 ) ? $mn : '00'; // minutes
-		    $ss = '00'; // seconds
+			$newdate   = sprintf( '%04d-%02d-%02d %02d:%02d:%02d', $aa, $mm, $jj, $hh, $mn, $ss ); // build MySQL datetime
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotValidated
+			$disable   = sanitize_text_field( wp_unslash( $_POST['modified_disable'] ?? 'none' ) ); // lock status
 
-			$newdate = sprintf( "%04d-%02d-%02d %02d:%02d:%02d", $aa, $mm, $jj, $hh, $mn, $ss );
+			// flags to decide which meta to update
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$update_date   = 'none' !== ( sanitize_text_field( wp_unslash( $_POST['modified_month'] ?? 'none' ) ) ); // month selector != “No Change”
+			$update_status = 'none' !== $disable; // disable selector != “No Change”
 
-	    	foreach ( $post_ids as $post_id ) {
-				if ( ! in_array( get_post_status( $post_id ), [ 'auto-draft', 'future' ] ) ) {
-				    if ( 'none' !== $mmm ) {
-						$this->update_meta( $post_id, '_wplmi_last_modified', $newdate );
-						$this->update_meta( $post_id, 'wplmi_bulk_update_datetime', $newdate );
-				    }
+			foreach ( $post_ids as $post_id ) {
+				// Skip drafts & scheduled posts
+				if ( in_array( get_post_status( $post_id ), [ 'auto-draft', 'future' ], true ) ) {
+					continue;
+				}
 
-				    if ( 'none' !== $disable ) {
-				    	$this->update_meta( $post_id, '_lmt_disableupdate', $disable );
-				    }
+				// Skip posts the user can't edit
+				if ( ! current_user_can( 'edit_post', $post_id ) ) {
+					continue;
+				}
+
+				// Update modified datetime
+				if ( $update_date ) {
+					$this->update_meta( $post_id, '_wplmi_last_modified', $newdate );
+					$this->update_meta( $post_id, 'wplmi_bulk_update_datetime', $newdate ); // flag for update_data()
+				}
+
+				// Update lock/unlock preference
+				if ( $update_status ) {
+					$this->update_meta( $post_id, '_lmt_disableupdate', $disable );
 				}
 			}
-	    }
+		}
 
 		$this->success();
 	}
@@ -291,33 +305,35 @@ class EditScreen
 	/**
 	 * Save post modified info to db.
 	 *
-	 * @param object   $data     Old Data
-	 * @param object   $postarr  Current Data
+	 * @param array   $data     Old Data
+	 * @param array   $postarr  Current Data
 	 *
-	 * @return object  $data
+	 * @return array  $data
 	 */
 	public function update_data( $data, $postarr ) {
 		if ( ! isset( $postarr['ID'] ) || in_array( $postarr['post_status'], [ 'auto-draft', 'future' ] ) ) {
 			return $data;
 		}
 
+		$current_post_id = (int) $postarr['ID'];
+
 		if ( $this->do_filter( 'force_update_author_id', false ) ) {
-		    $this->update_meta( $postarr['ID'], '_edit_last', get_current_user_id() );
+		    $this->update_meta( $current_post_id, '_edit_last', get_current_user_id() );
 		}
 
 		// Check bulk edit state
-		$bulk_datetime = $this->get_meta( $postarr['ID'], 'wplmi_bulk_update_datetime' );
+		$bulk_datetime = $this->get_meta( $current_post_id, 'wplmi_bulk_update_datetime' );
 		if ( ! empty( $bulk_datetime ) ) {
-			$data['post_modified'] = $bulk_datetime;
+			$data['post_modified']     = $bulk_datetime;
 			$data['post_modified_gmt'] = get_gmt_from_date( $bulk_datetime );
 
-			$this->delete_meta( $postarr['ID'], 'wplmi_bulk_update_datetime' );
+			$this->delete_meta( $current_post_id, 'wplmi_bulk_update_datetime' );
 
 		    return $data;
 		}
 
 		// Get disable state.
-		$disabled = $this->get_meta( $postarr['ID'], '_lmt_disableupdate' );
+		$disabled = $this->get_meta( $current_post_id, '_lmt_disableupdate' );
 
 		/**
 		 * Handle post editor save
@@ -339,35 +355,35 @@ class EditScreen
 			}
 
 			// Check the duplicate request.
-			$temp_date = $this->get_meta( $postarr['ID'], 'wplmi_temp_date' );
+			$temp_date = $this->get_meta( $current_post_id, 'wplmi_temp_date' );
 			if ( ! empty( $postarr['wplmi_modified_rest'] ) ) {
-				$published_timestamp = get_post_time( 'U', false, $postarr['ID'] );
-				$modified_timestamp = strtotime( $postarr['wplmi_modified_rest'] );
-				$modified_date      = date( 'Y-m-d H:i:s', $modified_timestamp );
+				$published_timestamp = get_post_time( 'U', false, $current_post_id );
+				$modified_timestamp  = strtotime( $postarr['wplmi_modified_rest'] );
+				$modified_date       = date( 'Y-m-d H:i:s', $modified_timestamp );
 
 				if ( $modified_timestamp >= $published_timestamp ) {
 					$data['post_modified']     = $modified_date;
 					$data['post_modified_gmt'] = get_gmt_from_date( $modified_date );
 
-					$this->update_meta( $postarr['ID'], 'wplmi_temp_date', $modified_date );
+					$this->update_meta( $current_post_id, 'wplmi_temp_date', $modified_date );
 				}
 			}
 			elseif ( ! empty( $temp_date ) ) {
 				$data['post_modified']     = $temp_date;
 				$data['post_modified_gmt'] = get_gmt_from_date( $temp_date );
 
-				$this->delete_meta( $postarr['ID'], 'wplmi_temp_date' );
+				$this->delete_meta( $current_post_id, 'wplmi_temp_date' );
 			}
 		} else {
 			/**
 			 * Handle Classic editor save
 			 */
 			$modified = ! empty( $postarr['wplmi_modified'] ) ? sanitize_text_field( $postarr['wplmi_modified'] ) : $postarr['post_modified'];
-			$change = ! empty( $postarr['wplmi_change'] ) ? sanitize_text_field( $postarr['wplmi_change'] ) : 'no';
+			$change   = ! empty( $postarr['wplmi_change'] ) ? sanitize_text_field( $postarr['wplmi_change'] ) : 'no';
 			$disabled = ! empty( $postarr['wplmi_disable'] ) ? sanitize_text_field( $postarr['wplmi_disable'] ) : $disabled;
 
 			// Update meta
-			$this->update_meta( $postarr['ID'], '_lmt_disableupdate', $disabled );
+			$this->update_meta( $current_post_id, '_lmt_disableupdate', $disabled );
 
 			// Check if disable is set to 'yes'
 			if ( 'yes' === $disabled ) {
@@ -380,33 +396,66 @@ class EditScreen
 
 			// check is current state is changed
 			if ( 'yes' === $change ) {
-				$mm = sanitize_text_field( $postarr['mmm'] );
-				$jj = sanitize_text_field( $postarr['jjm'] );
-				$aa = sanitize_text_field( $postarr['aam'] );
-				$hh = sanitize_text_field( $postarr['hhm'] );
-				$mn = sanitize_text_field( $postarr['mnm'] );
-				$ss = sanitize_text_field( $postarr['ssm'] );
-
-				$mm = ( is_numeric( $mm ) && $mm <= 12 ) ? $mm : '01'; // months
-				$jj = ( is_numeric( $jj ) && $jj <= 31 ) ? $jj : '01'; // days
-				$aa = ( is_numeric( $aa ) && $aa >= 0 ) ? $aa : '1970'; // years
-				$hh = ( is_numeric( $hh ) && $hh <= 24 ) ? $hh : '12'; // hours
-				$mn = ( is_numeric( $mn ) && $mn <= 60 ) ? $mn : '00'; // minutes
-				$ss = ( is_numeric( $ss ) && $ss <= 60 ) ? $ss : '00'; // seconds
-
-				$newdate = sprintf( "%04d-%02d-%02d %02d:%02d:%02d", $aa, $mm, $jj, $hh, $mn, $ss );
-				$published_timestamp = get_post_time( 'U', false, $postarr['ID'] );
+				$newdate             = $this->build_datetime( $postarr );
+				$published_timestamp = get_post_time( 'U', false, $current_post_id );
 
 				if ( strtotime( $newdate ) >= $published_timestamp ) {
-					$data['post_modified'] = $newdate;
+					$data['post_modified']     = $newdate;
 					$data['post_modified_gmt'] = get_gmt_from_date( $newdate );
 				}
 			}
 		}
 
 		// Update post meta for future reference
-		$this->update_meta( $postarr['ID'], '_wplmi_last_modified', $data['post_modified'] );
+		$this->update_meta( $current_post_id, '_wplmi_last_modified', $data['post_modified'] );
+
+		// WooCommerce compatibility: mirror the date to WC lookup tables
+		if ( function_exists( 'wc_get_order' ) && 'shop_order' === get_post_type( $current_post_id ) ) {
+			// Update the post_modified column in wc_orders (HPOS) if present
+			if ( class_exists( '\Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore' ) ) {
+				global $wpdb;
+				$wpdb->update(
+					$wpdb->prefix . 'wc_orders',
+					[ 'date_updated_gmt' => $data['post_modified_gmt'] ],
+					[ 'id' => $current_post_id ],
+					[ '%s' ],
+					[ '%d' ]
+				);
+			}
+			// Legacy post meta used by some WC extensions
+			update_post_meta( $current_post_id, '_date_updated', $data['post_modified'] );
+		}
 
 		return $data;
+	}
+
+	/**
+	 * Build Y-m-d H:i:s from classic-editor inputs; returns empty string on failure.
+	 *
+	 * @param array $postarr
+	 * @return string
+	 */
+	private function build_datetime( array $postarr ): string {
+		$mm = $this->clamp( sanitize_text_field( $postarr['mmm'] ?? '' ), 1, 12, 1 );
+		$jj = $this->clamp( sanitize_text_field( $postarr['jjm'] ?? '' ), 1, 31, 1 );
+		$aa = $this->clamp( sanitize_text_field( $postarr['aam'] ?? '' ), 0, 9999, 1970 );
+		$hh = $this->clamp( sanitize_text_field( $postarr['hhm'] ?? '' ), 0, 23, 12 );
+		$mn = $this->clamp( sanitize_text_field( $postarr['mnm'] ?? '' ), 0, 59, 0 );
+		$ss = $this->clamp( sanitize_text_field( $postarr['ssm'] ?? '' ), 0, 59, 0 );
+
+		return sprintf( '%04d-%02d-%02d %02d:%02d:%02d', $aa, $mm, $jj, $hh, $mn, $ss );
+	}
+
+	/**
+	 * Clamp a numeric input between min/max with fallback.
+	 *
+	 * @param mixed $value
+	 * @param int   $min
+	 * @param int   $max
+	 * @param int   $fallback
+	 * @return int
+	 */
+	private function clamp( $value, int $min, int $max, int $fallback ): int {
+		return is_numeric( $value ) ? max( $min, min( $max, (int) $value ) ) : $fallback;
 	}
 }
